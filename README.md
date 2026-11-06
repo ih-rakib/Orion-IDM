@@ -1,6 +1,6 @@
-# Simple Downloader
+# Orion-IDM
 
-A simple IDM-style download manager for Android — MVP.
+**Orion IDM** — a simple IDM-style download manager for Android (MVP).
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
@@ -23,7 +23,7 @@ built-in browser link grabbing, video-site extraction.
 
 ## Install
 
-Download `SimpleDownloader.apk` from the Releases/assets of this repo (or build
+Download `Orion-IDM.apk` (or build
 it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
@@ -35,7 +35,7 @@ No Gradle needed — the build uses only the Android SDK command-line tools:
 ```bash
 # Needs JDK 17+ and Android SDK platform android-34 + build-tools 34.0.0
 ./build.sh
-# Output: build/SimpleDownloader.apk  (debug-signed)
+# Output: build/Orion-IDM.apk  (debug-signed)
 ```
 
 ## How it works

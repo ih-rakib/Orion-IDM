@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build SimpleDownloader.apk without Gradle, using only the Android SDK
+# Build Orion-IDM.apk without Gradle, using only the Android SDK
 # command-line tools (aapt2 + javac + d8 + zipalign + apksigner).
 #
 # Requirements: JDK 17+, Android SDK with platform android-34 and
@@ -43,8 +43,8 @@ if [ ! -f "$KEYSTORE" ]; then
         -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
 fi
 "$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
-    --out SimpleDownloader.apk app-aligned.apk
+    --out Orion-IDM.apk app-aligned.apk
 
-echo "Built: $OUT/SimpleDownloader.apk"
-"$BT/apksigner" verify --print-certs "$OUT/SimpleDownloader.apk" | head -3
-ls -lh "$OUT/SimpleDownloader.apk"
+echo "Built: $OUT/Orion-IDM.apk"
+"$BT/apksigner" verify --print-certs "$OUT/Orion-IDM.apk" | head -3
+ls -lh "$OUT/Orion-IDM.apk"
