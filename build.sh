@@ -26,7 +26,7 @@ mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/res-compiled"
 
 # 2. Compile Java
 find "$APP_DIR/src/main/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
-javac -source 8 -target 8 -cp "$PLATFORM" \
+javac -encoding UTF-8 -source 8 -target 8 -cp "$PLATFORM" \
     -d "$OUT/classes" @"$OUT/sources.txt"
 
 # 3. Dex

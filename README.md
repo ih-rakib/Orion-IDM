@@ -1,25 +1,30 @@
 # Orion-IDM
 
-**Orion IDM** — a simple IDM-style download manager for Android (MVP).
+**Orion IDM** — an IDM-style download manager for Android. Version 2.0.
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
 
-## Features (MVP)
+## Features
 
+- **Fast engine (v2):** multi-connection downloads — up to 4 parallel HTTP
+  Range connections when the server supports them, the classic IDM trick
+- **Live speed** in the list and in the notification (MB/s, %, MB done/total)
+- **Real pause / resume:** partial segment files are kept, resume continues
+  where it stopped — even after the app is closed
+- **Built-in browser (v2):** browse a page, tap a file link or the
+  "Grab download links" button to pick a file from the page; the download
+  carries the site's cookies and user-agent, so logged-in downloads work
+- **Proper app icon (v2):** adaptive launcher icon (download arrow + orbit dot)
 - Paste a link, or Share a link from Chrome / Telegram / WhatsApp to the app
 - Auto file-name detection from the link (editable before downloading)
-- Background downloads with system notification progress
-- Automatic pause/resume when the network drops and returns
-- Queue: add many links, they are kept in a history list
-- Live in-app list: size, % done, state (Downloading / Paused / Done / Failed)
-- Tap a finished file to open it, long-press to remove it and delete the file
-- Files are saved to the phone's **Downloads** folder
+- Queue: add many links, they download one after another
+- Tap a row: pause / resume / open · long-press: remove (optionally delete file)
+- Files are saved to the phone's **Downloads** folder (MediaStore)
 
 Works for direct file links: PDF, ZIP, APK, MP4, MP3, documents, etc.
 
-Not in the MVP (possible v2): multi-connection speed boost, torrent,
-built-in browser link grabbing, video-site extraction.
+Still not included: torrent, video-site extraction (YouTube etc.).
 
 ## Install
 
@@ -27,6 +32,8 @@ Download `Orion-IDM.apk` (or build
 it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
+
+Package: `com.rakib.orionidm` · Version: 2.0
 
 ## Build
 
@@ -40,10 +47,13 @@ No Gradle needed — the build uses only the Android SDK command-line tools:
 
 ## How it works
 
-One Activity (`MainActivity.java`), no external dependencies. Downloads are
-enqueued with `DownloadManager`, which is why background running, notification
-progress and network resume work reliably without a foreground service.
-Download IDs are remembered in `SharedPreferences` to render the history list.
+No external dependencies. `DownloadService` is a foreground service with its
+own download engine: a probe request checks the total size and Range support,
+then the file is fetched in up to 4 parallel segment files and merged, or as
+a single resumable stream. Progress lives in `SharedPreferences` via `Store`,
+so the UI, the notification and a restarted service all agree. `BrowserActivity`
+is a small WebView browser whose download listener and link scanner hand URLs
+(with cookies + user-agent) back to `MainActivity`.
 
 ## License
 

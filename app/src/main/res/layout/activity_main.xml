@@ -50,10 +50,16 @@
             android:text="Download" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/browserBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🌐 Open built-in browser (grab links from pages)" />
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Downloads — tap a finished file to open it, long-press to remove it"
+        android:text="Downloads — tap: pause / resume / open · long-press: remove"
         android:textSize="13sp"
         android:textStyle="bold"
         android:paddingTop="8dp"

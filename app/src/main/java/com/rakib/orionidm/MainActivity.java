@@ -2,23 +2,16 @@ package com.rakib.orionidm;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.DownloadManager;
-import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.View;
-import android.webkit.MimeTypeMap;
 import android.webkit.URLUtil;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -26,20 +19,22 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Orion IDM - MVP.
+ * Orion IDM - v2.
  *
- * A tiny IDM-style download manager built on Android's system DownloadManager:
- *  - paste or share a direct file link
- *  - background downloads with system notification progress
- *  - automatic pause/resume on network loss (handled by the system downloader)
- *  - queue: add as many links as you like, they download in order added
- *  - history list: tap a finished file to open it, long-press to remove it
+ * Fast multi-connection downloads with real pause/resume and live speed
+ * (DownloadService), a built-in browser that grabs download links from
+ * pages (BrowserActivity), plus paste / share intake as in v1.
+ *
+ * List interactions: tap = pause / resume / open (depends on state),
+ * long-press = remove.
  */
 public class MainActivity extends Activity {
 
@@ -50,11 +45,8 @@ public class MainActivity extends Activity {
     private final List<String> rows = new ArrayList<>();
     private final List<Long> rowIds = new ArrayList<>();
 
-    private DownloadManager dm;
-    private SharedPreferences prefs;
     private final Handler handler = new Handler();
     private boolean polling = false;
-
     private final Runnable pollTask = new Runnable() {
         @Override public void run() {
             refreshList();
@@ -67,19 +59,16 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-        prefs = getSharedPreferences("history", MODE_PRIVATE);
-
         urlInput = findViewById(R.id.urlInput);
         nameInput = findViewById(R.id.nameInput);
         listView = findViewById(R.id.list);
         Button pasteBtn = findViewById(R.id.pasteBtn);
         Button downloadBtn = findViewById(R.id.downloadBtn);
+        Button browserBtn = findViewById(R.id.browserBtn);
 
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, rows);
         listView.setAdapter(adapter);
 
-        // Auto-fill the file name from the link while the name box is empty.
         urlInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
@@ -99,36 +88,80 @@ public class MainActivity extends Activity {
                 if (text != null) {
                     urlInput.setText(text.toString().trim());
                     toast("Pasted");
-                } else {
-                    toast("Clipboard is empty");
-                }
-            } else {
-                toast("Clipboard is empty");
+                } else toast("Clipboard is empty");
+            } else toast("Clipboard is empty");
+        });
+
+        downloadBtn.setOnClickListener(v -> {
+            String url = urlInput.getText().toString().trim();
+            String name = nameInput.getText().toString().trim();
+            if (enqueue(url, name, "", "")) {
+                urlInput.setText("");
+                nameInput.setText("");
             }
         });
 
-        downloadBtn.setOnClickListener(v -> startDownload());
+        browserBtn.setOnClickListener(v ->
+                startActivity(new Intent(this, BrowserActivity.class)));
 
         listView.setOnItemClickListener((parent, view, pos, id) -> {
-            if (pos < rowIds.size()) openDownload(rowIds.get(pos));
+            if (pos >= rowIds.size()) return;
+            long dlId = rowIds.get(pos);
+            JSONObject o = Store.get(this, dlId);
+            if (o == null) return;
+            String status = o.optString("status");
+            switch (status) {
+                case "running":
+                case "queued":
+                    setStatusLocal(o, "paused");
+                    DownloadService.control(this, DownloadService.ACTION_PAUSE, dlId);
+                    toast("Pausing…");
+                    break;
+                case "paused":
+                case "failed":
+                    setStatusLocal(o, "queued");
+                    DownloadService.control(this, DownloadService.ACTION_RESUME, dlId);
+                    DownloadService.wake(this);
+                    toast("Resuming…");
+                    break;
+                case "done":
+                    openDownload(o);
+                    break;
+                default:
+                    break;
+            }
+            refreshList();
         });
 
         listView.setOnItemLongClickListener((parent, view, pos, id) -> {
-            if (pos < rowIds.size()) {
-                long dlId = rowIds.get(pos);
-                new AlertDialog.Builder(this)
-                        .setTitle("Remove download?")
-                        .setMessage("This removes the entry and deletes the downloaded file.")
-                        .setPositiveButton("Remove", (d, w) -> {
-                            dm.remove(dlId);
-                            removeId(dlId);
-                            refreshList();
-                        })
-                        .setNegativeButton("Cancel", null)
-                        .show();
-                return true;
-            }
-            return false;
+            if (pos >= rowIds.size()) return true;
+            long dlId = rowIds.get(pos);
+            JSONObject o = Store.get(this, dlId);
+            if (o == null) return true;
+            new AlertDialog.Builder(this)
+                    .setTitle("Remove download?")
+                    .setMessage(o.optString("name")
+                            + "\n\nRemoves the entry and deletes partial data."
+                            + " A finished file already saved in Downloads is kept unless you pick 'Remove + delete file'.")
+                    .setPositiveButton("Remove", (d, w) -> {
+                        DownloadService.control(this, DownloadService.ACTION_CANCEL, dlId);
+                        Store.remove(this, dlId);
+                        refreshList();
+                    })
+                    .setNeutralButton("Remove + delete file", (d, w) -> {
+                        DownloadService.control(this, DownloadService.ACTION_CANCEL, dlId);
+                        String uri = o.optString("finalUri");
+                        if (uri != null && !uri.isEmpty()) {
+                            try {
+                                getContentResolver().delete(Uri.parse(uri), null, null);
+                            } catch (Exception ignored) {}
+                        }
+                        Store.remove(this, dlId);
+                        refreshList();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            return true;
         });
 
         handleIncomingIntent(getIntent());
@@ -147,6 +180,16 @@ public class MainActivity extends Activity {
         super.onResume();
         polling = true;
         handler.post(pollTask);
+        // Restart the engine if a previous run left something queued/running
+        // (e.g. after a reboot or the service being killed).
+        for (JSONObject o : Store.all(this)) {
+            String s = o.optString("status");
+            if ("queued".equals(s) || "running".equals(s)) {
+                if ("running".equals(s)) setStatusLocal(o, "queued");
+                DownloadService.wake(this);
+                break;
+            }
+        }
     }
 
     @Override
@@ -160,6 +203,18 @@ public class MainActivity extends Activity {
 
     private void handleIncomingIntent(Intent intent) {
         if (intent == null) return;
+
+        // From the built-in browser: start right away with its cookies/UA.
+        if (intent.getBooleanExtra("autostart", false)) {
+            String url = intent.getStringExtra("url");
+            if (url != null && !url.isEmpty()) {
+                enqueue(url, intent.getStringExtra("name"),
+                        intent.getStringExtra("ua"), intent.getStringExtra("cookie"));
+                refreshList();
+            }
+            return;
+        }
+
         String shared = null;
         if (Intent.ACTION_SEND.equals(intent.getAction())
                 && "text/plain".equals(intent.getType())) {
@@ -177,62 +232,26 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void startDownload() {
-        String url = urlInput.getText().toString().trim();
-        if (url.isEmpty()) { toast("Paste a link first"); return; }
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            toast("Link must start with http:// or https://");
-            return;
-        }
-        String name = nameInput.getText().toString().trim();
-        if (name.isEmpty()) name = guessFileName(url);
-        if (name.isEmpty()) name = "download.bin";
+    private boolean enqueue(String url, String name, String ua, String cookie) {
+        if (url == null || url.trim().isEmpty()) { toast("Paste a link first"); return false; }
+        url = findUrl(url.trim());
+        if (url == null) { toast("No http(s) link found"); return false; }
+        if (name == null || name.trim().isEmpty()) name = guessFileName(url);
+        if (name == null || name.isEmpty()) name = "download.bin";
         name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-
-        try {
-            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
-            req.setTitle(name);
-            req.setDescription(url);
-            req.setNotificationVisibility(
-                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-            req.setAllowedOverMetered(true);
-            req.setAllowedOverRoaming(true);
-            String ext = MimeTypeMap.getFileExtensionFromUrl(url);
-            if (ext != null) {
-                String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase());
-                if (mime != null) req.setMimeType(mime);
-            }
-            long id = dm.enqueue(req);
-            saveId(id);
-            toast("Download started: " + name);
-            urlInput.setText("");
-            nameInput.setText("");
-            refreshList();
-        } catch (Exception e) {
-            toast("Could not start: " + e.getMessage());
-        }
+        Store.newEntry(this, url, name, ua, cookie);
+        DownloadService.wake(this);
+        toast("Download queued: " + name);
+        refreshList();
+        return true;
     }
 
-    private void openDownload(long id) {
+    private void openDownload(JSONObject o) {
+        String uri = o.optString("finalUri");
+        if (uri == null || uri.isEmpty()) { toast("File not found"); return; }
         try {
-            DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
-            Cursor c = dm.query(q);
-            int status = -1;
-            if (c != null) {
-                if (c.moveToFirst()) {
-                    status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
-                }
-                c.close();
-            }
-            if (status != DownloadManager.STATUS_SUCCESSFUL) {
-                toast("Not finished yet");
-                return;
-            }
-            Uri uri = dm.getUriForDownloadedFile(id);
-            if (uri == null) { toast("File not found (was it deleted?)"); return; }
             Intent open = new Intent(Intent.ACTION_VIEW);
-            open.setDataAndType(uri, dm.getMimeTypeForDownloadedFile(id));
+            open.setDataAndType(Uri.parse(uri), mimeFor(o.optString("name")));
             open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(open);
         } catch (Exception e) {
@@ -240,86 +259,65 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String mimeFor(String name) {
+        String ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(name);
+        String mime = ext == null ? null : android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(ext.toLowerCase());
+        return mime == null ? "*/*" : mime;
+    }
+
     // ------------------------------------------------------------------
 
     private void refreshList() {
-        List<Long> ids = loadIds();
+        List<JSONObject> all = Store.all(this);
         rows.clear();
         rowIds.clear();
-        for (long id : ids) {
-            rows.add(describe(id));
-            rowIds.add(id);
+        for (JSONObject o : all) {
+            rows.add(describe(o));
+            rowIds.add(o.optLong("id"));
         }
         if (rows.isEmpty()) rows.add("No downloads yet");
         adapter.notifyDataSetChanged();
     }
 
-    private String describe(long id) {
-        DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
-        Cursor c = dm.query(q);
-        String out;
-        if (c == null || !c.moveToFirst()) {
-            out = "Download #" + id + " - record gone";
-            if (c != null) c.close();
-            return out;
-        }
-        String title = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE));
-        int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
-        long done = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-        long total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-        c.close();
-        if (title == null || title.isEmpty()) title = "file";
+    private String describe(JSONObject o) {
+        String name = o.optString("name", "file");
+        String status = o.optString("status", "");
+        long done = o.optLong("done", 0);
+        long total = o.optLong("total", -1);
+        long speed = o.optLong("speed", 0);
+        int parts = o.optInt("parts", 1);
 
-        String size = total > 0
-                ? String.format("%.1f / %.1f MB  (%d%%)", done / 1048576.0, total / 1048576.0,
-                        (int) (done * 100 / Math.max(total, 1)))
-                : String.format("%.1f MB", done / 1048576.0);
+        String size;
+        if (total > 0) {
+            size = DownloadService.human(done) + " / " + DownloadService.human(total)
+                    + "  (" + (done * 100 / Math.max(total, 1)) + "%)";
+        } else {
+            size = DownloadService.human(done);
+        }
 
         String state;
         switch (status) {
-            case DownloadManager.STATUS_RUNNING:    state = "Downloading"; break;
-            case DownloadManager.STATUS_PAUSED:     state = "Paused (will auto-resume)"; break;
-            case DownloadManager.STATUS_PENDING:    state = "Waiting"; break;
-            case DownloadManager.STATUS_SUCCESSFUL: state = "Done - tap to open"; break;
-            case DownloadManager.STATUS_FAILED:     state = "Failed - long-press to remove, then retry"; break;
-            default:                                state = "Unknown"; break;
+            case "running":
+                state = "Downloading" + (parts > 1 ? "  ×" + parts + " connections" : "")
+                        + (speed > 0 ? "  •  " + DownloadService.human(speed) + "/s" : "")
+                        + "  - tap to pause";
+                break;
+            case "queued":  state = "Waiting…"; break;
+            case "paused":  state = "Paused - tap to resume"; break;
+            case "done":    state = "Done - tap to open"; break;
+            case "failed":
+                String err = o.optString("error", "");
+                state = "Failed" + (err.isEmpty() ? "" : ": " + err) + " - tap to resume";
+                break;
+            default:        state = status; break;
         }
-        return title + "\n" + size + "  -  " + state;
+        return name + "\n" + size + "  -  " + state;
     }
 
-    // ------------------------------------------------------------------
-
-    private void saveId(long id) {
-        List<Long> ids = loadIds();
-        ids.add(0, id);
-        while (ids.size() > 100) ids.remove(ids.size() - 1);
-        writeIds(ids);
-    }
-
-    private void removeId(long id) {
-        List<Long> ids = loadIds();
-        ids.remove(Long.valueOf(id));
-        writeIds(ids);
-    }
-
-    private List<Long> loadIds() {
-        List<Long> ids = new ArrayList<>();
-        String raw = prefs.getString("ids", "");
-        if (raw != null && !raw.isEmpty()) {
-            for (String p : raw.split(",")) {
-                try { ids.add(Long.parseLong(p.trim())); } catch (NumberFormatException ignored) {}
-            }
-        }
-        return ids;
-    }
-
-    private void writeIds(List<Long> ids) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < ids.size(); i++) {
-            if (i > 0) sb.append(',');
-            sb.append(ids.get(i));
-        }
-        prefs.edit().putString("ids", sb.toString()).apply();
+    private void setStatusLocal(JSONObject o, String status) {
+        try { o.put("status", status); } catch (Exception ignored) {}
+        Store.put(this, o);
     }
 
     // ------------------------------------------------------------------
@@ -334,6 +332,10 @@ public class MainActivity extends Activity {
 
     static String findUrl(String text) {
         if (text == null) return null;
+        if (text.startsWith("http://") || text.startsWith("https://")) {
+            int sp = text.indexOf(' ');
+            return sp > 0 ? text.substring(0, sp) : text;
+        }
         for (String word : text.split("\\s+")) {
             if (word.startsWith("http://") || word.startsWith("https://")) return word;
         }
@@ -351,12 +353,4 @@ public class MainActivity extends Activity {
     private void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
-
-    // Referenced so the compiler keeps the import list honest on older toolchains.
-    @SuppressWarnings("unused")
-    private ClipData unusedClip() { return null; }
-
-    // Keep View import used (listener signatures reference it in lambdas on some compilers).
-    @SuppressWarnings("unused")
-    private View unusedView() { return null; }
 }

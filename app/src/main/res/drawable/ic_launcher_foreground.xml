@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Orion IDM icon foreground: white download arrow onto a tray,
+     with a small gold "orbit" dot, on a 108x108 adaptive canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,20 h12 v26 h-12 z M33,44 L75,44 L54,69 Z M37,78 h34 v6 h-34 z" />
+    <path
+        android:fillColor="#FFC857"
+        android:pathData="M84,24 m-3.5,0 a3.5,3.5 0 1,1 7,0 a3.5,3.5 0 1,1 -7,0" />
+</vector>
