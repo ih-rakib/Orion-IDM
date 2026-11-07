@@ -120,11 +120,15 @@ public class AudioExtractor {
             boolean muxStarted = false;
 
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            long transcodeStart = System.currentTimeMillis();
             boolean inputEOS = false, decoderEOS = false, encoderEOS = false;
             ByteBuffer pending = null;
             long pendingPts = 0;
 
             while (!encoderEOS) {
+                if (System.currentTimeMillis() - transcodeStart > 12 * 60 * 1000) {
+                    return false; // watchdog: never spin forever on a bad file
+                }
                 // Feed decoder
                 if (!inputEOS) {
                     int inIdx = decoder.dequeueInputBuffer(2000);

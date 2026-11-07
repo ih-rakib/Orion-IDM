@@ -60,6 +60,7 @@ public class DownloadService extends Service {
     private Thread worker;
     private long activeId = -1;
     private String curReferer = "";
+    private volatile boolean rangesLied = false;
 
     // ---------------------------------------------------------------
 
@@ -185,9 +186,17 @@ public class DownloadService extends Service {
                 total = probe.getContentLengthLong();
                 String ar = probe.getHeaderField("Accept-Ranges");
                 ranges = ar != null && ar.contains("bytes");
+            } else if (code == 416) {
+                // Range not satisfiable - usually a zero-byte or odd file.
+                String cr = probe.getHeaderField("Content-Range");
+                if (cr != null && cr.contains("/")) {
+                    try { total = Long.parseLong(cr.substring(cr.indexOf('/') + 1).trim()); }
+                    catch (NumberFormatException ignored) {}
+                }
+                ranges = false;
             } else {
                 probe.disconnect();
-                throw new IOException("Server answered HTTP " + code);
+                throw new IOException(friendlyHttp(code));
             }
             probe.disconnect();
             setField(id, "total", total);
@@ -205,11 +214,21 @@ public class DownloadService extends Service {
         int parts = 1;
         if (ranges && total >= 2_000_000) parts = 4;
         else if (ranges && total >= 500_000) parts = 2;
+        rangesLied = false;
         setField(id, "parts", parts);
 
         File full = new File(dir, "full.bin");
         boolean ok;
-        if (parts > 1) ok = downloadMulti(id, url, ua, cookie, dir, total, parts);
+        if (parts > 1) {
+            ok = downloadMulti(id, url, ua, cookie, dir, total, parts);
+            if (!ok && rangesLied && !pauseRequested(id) && !cancelRequested(id)) {
+                // The server claimed Range support but answered a segment
+                // with a full 200 response. Fall back to a single stream.
+                for (int k = 0; k < parts; k++) new File(dir, "seg" + k).delete();
+                setField(id, "parts", 1);
+                ok = downloadSingle(id, url, ua, cookie, dir, false);
+            }
+        }
         else ok = downloadSingle(id, url, ua, cookie, dir, ranges);
 
         if (cancelRequested(id)) {
@@ -280,7 +299,7 @@ public class DownloadService extends Service {
             int code = conn.getResponseCode();
             boolean append = existing > 0 && code == 206;
             if (!append) existing = 0;
-            if (code != 200 && code != 206) { conn.disconnect(); fail(id, "HTTP " + code); return false; }
+            if (code != 200 && code != 206) { conn.disconnect(); fail(id, friendlyHttp(code)); return false; }
             InputStream in = conn.getInputStream();
             OutputStream out = new FileOutputStream(part, append);
             byte[] buf = new byte[64 * 1024];
@@ -330,7 +349,9 @@ public class DownloadService extends Service {
                 try {
                     HttpURLConnection conn = open(url, ua, cookie,
                             "bytes=" + (start + have) + "-" + end);
-                    if (conn.getResponseCode() != 206) { conn.disconnect(); return; }
+                    int scode = conn.getResponseCode();
+                    if (scode == 200) rangesLied = true;
+                    if (scode != 206) { conn.disconnect(); return; }
                     InputStream in = conn.getInputStream();
                     OutputStream out = new FileOutputStream(seg, true);
                     byte[] buf = new byte[64 * 1024];
@@ -398,27 +419,47 @@ public class DownloadService extends Service {
 
     private String publish(File file, String name) throws IOException {
         String mime = guessMime(name);
-        if (Build.VERSION.SDK_INT >= 29) {
-            ContentResolver cr = getContentResolver();
-            ContentValues v = new ContentValues();
-            v.put(MediaStore.Downloads.DISPLAY_NAME, name);
-            v.put(MediaStore.Downloads.MIME_TYPE, mime);
-            v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-            Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-            if (uri == null) throw new IOException("Could not create file in Downloads");
-            OutputStream out = cr.openOutputStream(uri);
-            if (out == null) throw new IOException("Could not write file in Downloads");
-            copy(file, out);
-            out.close();
-            return uri.toString();
-        } else {
-            File dest = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), name);
-            OutputStream out = new FileOutputStream(dest);
-            copy(file, out);
-            out.close();
-            return Uri.fromFile(dest).toString();
+        String candidate = name;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            if (attempt > 0) candidate = withSuffix(name, attempt);
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentResolver cr = getContentResolver();
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.Downloads.DISPLAY_NAME, candidate);
+                    v.put(MediaStore.Downloads.MIME_TYPE, mime);
+                    v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    if (uri == null) continue;
+                    OutputStream out = cr.openOutputStream(uri);
+                    if (out == null) continue;
+                    copy(file, out);
+                    out.close();
+                    return uri.toString();
+                } else {
+                    File dest = new File(Environment
+                            .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                            candidate);
+                    if (dest.exists()) continue;
+                    OutputStream out = new FileOutputStream(dest);
+                    copy(file, out);
+                    out.close();
+                    return Uri.fromFile(dest).toString();
+                }
+            } catch (RuntimeException e) {
+                // Name already taken on this device - try the next suffix.
+                if (attempt == 19) throw new IOException("Could not save into Downloads: " + e.getMessage());
+            }
         }
+        throw new IOException("Could not create file in Downloads");
+    }
+
+    private String withSuffix(String name, int n) {
+        int dot = name.lastIndexOf('.');
+        if (dot > 0 && name.length() - dot <= 6) {
+            return name.substring(0, dot) + " (" + n + ")" + name.substring(dot);
+        }
+        return name + " (" + n + ")";
     }
 
     private void copy(File file, OutputStream out) throws IOException {
@@ -431,22 +472,57 @@ public class DownloadService extends Service {
     }
 
     private String guessMime(String name) {
-        String ext = MimeTypeMap.getFileExtensionFromUrl(name);
+        String ext = null;
+        if (name != null) {
+            String clean = name.split("[?#]")[0];
+            int dot = clean.lastIndexOf('.');
+            int slash = clean.lastIndexOf('/');
+            if (dot > slash && dot >= 0 && clean.length() - dot <= 6) {
+                ext = clean.substring(dot + 1).toLowerCase();
+            }
+        }
         String mime = ext == null ? null
-                : MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase());
+                : MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+        if (mime == null && "m4a".equals(ext)) mime = "audio/mp4";
         return mime == null ? "application/octet-stream" : mime;
     }
 
     // ---------------------------------------------------------------
 
+    static final String DEFAULT_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+            + "AppleWebKit/537.36 (KHTML, like Gecko) "
+            + "Chrome/120.0.0.0 Mobile Safari/537.36";
+
+    /** Opens a connection and follows redirects manually - the built-in
+     *  follower refuses http<->https hops, which media CDNs use a lot. */
     private HttpURLConnection open(String url, String ua, String cookie, String range)
+            throws IOException {
+        String current = url;
+        for (int hop = 0; hop < 6; hop++) {
+            HttpURLConnection conn = rawOpen(current, ua, cookie, range);
+            int code = conn.getResponseCode();
+            if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                String loc = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (loc == null || loc.isEmpty()) return rawOpen(current, ua, cookie, range);
+                current = new URL(new URL(current), loc).toString();
+                continue;
+            }
+            return conn;
+        }
+        return rawOpen(current, ua, cookie, range);
+    }
+
+    private HttpURLConnection rawOpen(String url, String ua, String cookie, String range)
             throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(30000);
-        conn.setInstanceFollowRedirects(true);
+        conn.setInstanceFollowRedirects(false);
         conn.setRequestProperty("User-Agent",
-                ua == null || ua.isEmpty() ? "OrionIDM/2.0 (Android)" : ua);
+                ua == null || ua.isEmpty() ? DEFAULT_UA : ua);
+        // Never let a proxy/server gzip the body: it corrupts Range offsets.
+        conn.setRequestProperty("Accept-Encoding", "identity");
         if (cookie != null && !cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
         if (curReferer != null && !curReferer.isEmpty()) {
             conn.setRequestProperty("Referer", curReferer);
@@ -528,6 +604,19 @@ public class DownloadService extends Service {
             if (error != null) o.put("error", error);
         } catch (Exception ignored) {}
         Store.put(this, o);
+    }
+
+    static String friendlyHttp(int code) {
+        switch (code) {
+            case 403: return "Server refused (403) - the link may have expired; share it again";
+            case 404: return "File not found (404)";
+            case 410: return "Link expired (410) - share it again";
+            case 416: return "Server range error (416)";
+            case 429: return "Server is busy (429) - try again in a bit";
+            default:
+                if (code >= 500) return "Server error (" + code + ") - try again later";
+                return "Server answered HTTP " + code;
+        }
     }
 
     private void fail(long id, String msg) {

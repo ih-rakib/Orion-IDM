@@ -1,6 +1,6 @@
 # Orion-IDM
 
-**Orion IDM** — an IDM-style download manager for Android. Version 2.4.
+**Orion IDM** — an IDM-style download manager for Android. Version 2.5.
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
@@ -47,6 +47,17 @@ progress, using Android's system DownloadManager.
   page the stream came from (captured by the chooser/browser), and defaults
   to `https://www.facebook.com/` for any fbcdn/scontent/facebook URL —
   including resuming entries queued by older versions.
+- **Full error-audit pass (v2.5):** instead of fixing one error per release,
+  the whole pipeline was audited and hardened in one build — manual redirect
+  following across http<->https hops, `Accept-Encoding: identity` so nothing
+  can gzip-corrupt Range downloads, HTTP 416 handling, fallback to a single
+  stream when a server lies about Range support, plain-language errors
+  (403/410 = "link expired, share again"), Downloads name-collision suffixes
+  instead of failed saves, long page-title names truncated safely, share
+  intake from ClipData and `intent://` fallback links, trailing-punctuation
+  trimming on pasted links, chooser Rescan button, CDN-domain cookies,
+  browser Grab also scanning players/page meta, blob-stream explanation,
+  and a watchdog so audio extraction can never spin forever.
 - Paste a link, or Share a link from Chrome / Telegram / WhatsApp to the app
 - Auto file-name detection from the link (editable before downloading)
 - Queue: add many links, they download one after another
@@ -64,7 +75,7 @@ it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
 
-Package: `com.rakib.orionidm` · Version: 2.4
+Package: `com.rakib.orionidm` · Version: 2.5
 
 ## Build
 

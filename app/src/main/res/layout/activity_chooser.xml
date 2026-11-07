@@ -34,6 +34,12 @@
         android:layout_height="150dp" />
 
     <Button
+        android:id="@+id/rescanBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔄 Rescan this page" />
+
+    <Button
         android:id="@+id/browserBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

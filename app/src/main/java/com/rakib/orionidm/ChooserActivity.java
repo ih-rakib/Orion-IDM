@@ -100,6 +100,17 @@ public class ChooserActivity extends Activity {
             finish();
         });
 
+        Button rescanBtn = findViewById(R.id.rescanBtn);
+        rescanBtn.setOnClickListener(v -> {
+            scanned = false;
+            labels.clear();
+            choices.clear();
+            adapter.notifyDataSetChanged();
+            progress.setVisibility(View.VISIBLE);
+            status.setText("Finding video / audio formats on this page…");
+            scan(1);
+        });
+
         WebSettings s = web.getSettings();
         s.setUserAgentString("Mozilla/5.0 (Linux; Android 13; Pixel 7) "
                 + "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -295,7 +306,12 @@ public class ChooserActivity extends Activity {
 
     private void pick(Choice c) {
         String ua = web.getSettings().getUserAgentString();
-        String cookie = CookieManager.getInstance().getCookie(pageUrl);
+        // The stream lives on a CDN domain - its cookies are the ones that
+        // matter; fall back to the page's cookies.
+        String cookie = CookieManager.getInstance().getCookie(c.url);
+        if (cookie == null || cookie.isEmpty()) {
+            cookie = CookieManager.getInstance().getCookie(pageUrl);
+        }
         if (cookie == null) cookie = "";
         String base = pageTitle;
         if (base == null || base.trim().isEmpty()) base = MainActivity.guessFileName(c.url);

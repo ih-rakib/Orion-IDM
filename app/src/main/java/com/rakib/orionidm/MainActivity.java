@@ -238,10 +238,14 @@ public class MainActivity extends Activity {
         }
 
         String shared = null;
-        if (Intent.ACTION_SEND.equals(intent.getAction())
-                && "text/plain".equals(intent.getType())) {
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
             CharSequence t = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
             if (t != null) shared = findUrl(t.toString());
+            if (shared == null && intent.getClipData() != null
+                    && intent.getClipData().getItemCount() > 0) {
+                CharSequence ct = intent.getClipData().getItemAt(0).getText();
+                if (ct != null) shared = findUrl(ct.toString());
+            }
         } else if (Intent.ACTION_VIEW.equals(intent.getAction())) {
             Uri data = intent.getData();
             if (data != null) shared = normalizeSharedUrl(data.toString());
@@ -268,7 +272,14 @@ public class MainActivity extends Activity {
         if (!url.startsWith("http")) { toast("That link type is not supported"); return false; }
         if (name == null || name.trim().isEmpty()) name = guessFileName(url);
         if (name == null || name.isEmpty()) name = "download.bin";
-        name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        name = name.replaceAll("[\\\\/:*?\"<>|]", "_")
+                .replaceAll("[\\n\\r\\t]+", " ").trim();
+        if (name.length() > 90) {
+            String ext = "";
+            int dot = name.lastIndexOf('.');
+            if (dot > 0 && name.length() - dot <= 6) ext = name.substring(dot);
+            name = name.substring(0, 90 - ext.length()) + ext;
+        }
         if (audioOnly) name = ChooserActivity.stripExt(name) + ".m4a";
         Store.newEntry(this, url, name, ua, cookie, audioOnly, referer);
         DownloadService.wake(this);
@@ -395,15 +406,28 @@ public class MainActivity extends Activity {
         if (text == null) return null;
         text = text.trim();
         if (text.startsWith("http://") || text.startsWith("https://")
-                || text.startsWith("fb://")) {
+                || text.startsWith("fb://") || text.startsWith("intent://")) {
             int sp = text.indexOf(' ');
-            return sp > 0 ? text.substring(0, sp) : text;
+            return trimTail(sp > 0 ? text.substring(0, sp) : text);
         }
         for (String word : text.split("\\s+")) {
             if (word.startsWith("http://") || word.startsWith("https://")
-                    || word.startsWith("fb://")) return word;
+                    || word.startsWith("fb://") || word.startsWith("intent://")) {
+                return trimTail(word);
+            }
         }
         return null;
+    }
+
+    private static String trimTail(String u) {
+        while (u.length() > 8) {
+            char c = u.charAt(u.length() - 1);
+            if (c == ')' || c == '.' || c == ',' || c == ';' || c == '!'
+                    || c == '"' || c == '\'' || c == '>' || c == ']') {
+                u = u.substring(0, u.length() - 1);
+            } else break;
+        }
+        return u;
     }
 
     /**
@@ -414,6 +438,21 @@ public class MainActivity extends Activity {
     static String normalizeSharedUrl(String url) {
         if (url == null) return null;
         url = url.trim();
+        if (url.startsWith("intent://")) {
+            // Chrome-style intent links carry the real address in the
+            // browser_fallback_url parameter.
+            int i = url.indexOf("S.browser_fallback_url=");
+            if (i >= 0) {
+                String rest = url.substring(i + "S.browser_fallback_url=".length());
+                int semi = rest.indexOf(';');
+                if (semi >= 0) rest = rest.substring(0, semi);
+                try {
+                    String decoded = URLDecoder.decode(rest, "UTF-8");
+                    if (decoded.startsWith("http")) return decoded;
+                } catch (Exception ignored) {}
+            }
+            return url;
+        }
         if (url.startsWith("fb://")) {
             java.util.regex.Matcher m =
                     java.util.regex.Pattern.compile("(\\d{6,})").matcher(url);

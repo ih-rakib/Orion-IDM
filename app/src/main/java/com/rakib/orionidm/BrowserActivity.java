@@ -99,6 +99,10 @@ public class BrowserActivity extends Activity {
             @Override public void onDownloadStart(String url, String userAgent,
                                                   String contentDisposition,
                                                   String mimeType, long contentLength) {
+                if (url != null && url.startsWith("blob:")) {
+                    toast("This site streams in a protected way (blob) - cannot download directly");
+                    return;
+                }
                 handBack(url, URLUtil.guessFileName(url, contentDisposition, mimeType));
             }
         });
@@ -134,9 +138,15 @@ public class BrowserActivity extends Activity {
 
     private void grabLinks() {
         String js = "(function(){var out=[];var seen={};"
+                + "function add(h){if(h && !seen[h] && !h.startsWith('blob:')){seen[h]=1;out.push(h);}}"
                 + "var as=document.querySelectorAll('a[href]');"
                 + "for(var i=0;i<as.length;i++){var h=as[i].href;"
-                + "if(/\\." + FILE_EXT + "(\\?|#|$)/i.test(h) && !seen[h]){seen[h]=1;out.push(h);}}"
+                + "if(/\\." + FILE_EXT + "(\\?|#|$)/i.test(h))add(h);}"
+                + "var vs=document.querySelectorAll('video,video source,audio,audio source');"
+                + "for(var j=0;j<vs.length;j++){add(vs[j].currentSrc||vs[j].src);}"
+                + "var ms=document.querySelectorAll('meta');"
+                + "for(var k=0;k<ms.length;k++){var pr=ms[k].getAttribute('property')||'';"
+                + "if(pr.indexOf('og:video')===0||pr.indexOf('og:audio')===0)add(ms[k].getAttribute('content'));}"
                 + "return JSON.stringify(out);})()";
         web.evaluateJavascript(js, value -> {
             List<String> links = new ArrayList<>();
