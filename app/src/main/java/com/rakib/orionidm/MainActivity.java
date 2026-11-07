@@ -3,6 +3,7 @@ package com.rakib.orionidm;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipboardManager;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -130,6 +131,10 @@ public class MainActivity extends Activity {
             JSONObject o = Store.get(this, dlId);
             if (o == null) return;
             String status = o.optString("status");
+            if ("failed".equals(status) && !o.optString("debug").isEmpty()) {
+                showFailedDialog(o);
+                return;
+            }
             switch (status) {
                 case "running":
                 case "queued":
@@ -272,15 +277,7 @@ public class MainActivity extends Activity {
         if (!url.startsWith("http")) { toast("That link type is not supported"); return false; }
         if (name == null || name.trim().isEmpty()) name = guessFileName(url);
         if (name == null || name.isEmpty()) name = "download.bin";
-        name = name.replaceAll("[\\\\/:*?\"<>|]", "_")
-                .replaceAll("[\\n\\r\\t]+", " ").trim();
-        if (name.length() > 90) {
-            String ext = "";
-            int dot = name.lastIndexOf('.');
-            if (dot > 0 && name.length() - dot <= 6) ext = name.substring(dot);
-            name = name.substring(0, 90 - ext.length()) + ext;
-        }
-        if (audioOnly) name = ChooserActivity.stripExt(name) + ".m4a";
+        name = sanitizeName(name, audioOnly);
         Store.newEntry(this, url, name, ua, cookie, audioOnly, referer);
         DownloadService.wake(this);
         toast("Download queued: " + name);
@@ -316,6 +313,46 @@ public class MainActivity extends Activity {
                 "pptx","jpg","jpeg","png","gif","webp","txt","csv","iso","bin","dmg","exe","msi"};
         for (String k : known) if (k.equals(e)) return e;
         return null;
+    }
+
+    private void showFailedDialog(JSONObject o) {
+        String debug = o.optString("debug");
+        final String msg = o.optString("error") + "\n\n— Debug info —\n" + debug;
+        new AlertDialog.Builder(this)
+                .setTitle("Download failed")
+                .setMessage(msg)
+                .setPositiveButton("Resume", (d, w) -> {
+                    setStatusLocal(o, "queued");
+                    DownloadService.control(this, DownloadService.ACTION_RESUME, o.optLong("id"));
+                    DownloadService.wake(this);
+                    refreshList();
+                })
+                .setNeutralButton("Copy debug", (d, w) -> {
+                    ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText("Orion IDM debug",
+                                "URL: " + o.optString("url") + "\n" + msg));
+                    }
+                    toast("Debug info copied - paste it in our chat");
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    /** Shared name cleanup: strip bad chars/newlines, cap the length, and
+     *  swap the extension for audio-only downloads. */
+    public static String sanitizeName(String name, boolean audioOnly) {
+        if (name == null) name = "download";
+        name = name.replaceAll("[\\\\/:*?\"<>|]", "_")
+                .replaceAll("[\\n\\r\\t]+", " ").trim();
+        if (name.length() > 90) {
+            String ext = "";
+            int dot = name.lastIndexOf('.');
+            if (dot > 0 && name.length() - dot <= 6) ext = name.substring(dot);
+            name = name.substring(0, 90 - ext.length()) + ext;
+        }
+        if (audioOnly) name = ChooserActivity.stripExt(name) + ".m4a";
+        return name;
     }
 
     private void openDownload(JSONObject o) {

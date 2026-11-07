@@ -173,7 +173,33 @@ public class BrowserActivity extends Activity {
         });
     }
 
+    private WebFetcher fetcher;
+
     private void handBack(String url, String filename) {
+        String cur = web.getUrl();
+        if (cur != null && cur.contains("facebook.com")) {
+            // Same 403 wall as the chooser: fetch inside this page session.
+            toast("Fetching inside the page…");
+            if (fetcher == null) {
+                fetcher = new WebFetcher(this, web, new WebFetcher.Listener() {
+                    @Override public void onProgress(long done, long total) {}
+                    @Override public void onDone(String savedName) {
+                        toast("Saved to Downloads: " + savedName);
+                        Intent i = new Intent(BrowserActivity.this, MainActivity.class);
+                        i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        startActivity(i);
+                        finish();
+                    }
+                    @Override public void onError(String message) {
+                        toast("In-page fetch failed: " + message);
+                    }
+                });
+            }
+            fetcher.start(url, filename == null || filename.isEmpty()
+                    ? MainActivity.guessFileName(url) : filename, false);
+            return;
+        }
         String ua = web.getSettings().getUserAgentString();
         String cookie = CookieManager.getInstance().getCookie(url);
         Intent i = new Intent(this, MainActivity.class);

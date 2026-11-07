@@ -195,6 +195,7 @@ public class DownloadService extends Service {
                 }
                 ranges = false;
             } else {
+                setField(id, "debug", debugInfo(ua, cookie, probe, code));
                 probe.disconnect();
                 throw new IOException(friendlyHttp(code));
             }
@@ -299,7 +300,10 @@ public class DownloadService extends Service {
             int code = conn.getResponseCode();
             boolean append = existing > 0 && code == 206;
             if (!append) existing = 0;
-            if (code != 200 && code != 206) { conn.disconnect(); fail(id, friendlyHttp(code)); return false; }
+            if (code != 200 && code != 206) {
+                setField(id, "debug", debugInfo(ua, cookie, conn, code));
+                conn.disconnect(); fail(id, friendlyHttp(code)); return false;
+            }
             InputStream in = conn.getInputStream();
             OutputStream out = new FileOutputStream(part, append);
             byte[] buf = new byte[64 * 1024];
@@ -606,9 +610,35 @@ public class DownloadService extends Service {
         Store.put(this, o);
     }
 
+    /** What we sent + what the server answered, for failed downloads.
+     *  Shown in the app (tap a failed entry -> Copy debug). */
+    private String debugInfo(String ua, String cookie, HttpURLConnection conn, int code) {
+        return "HTTP " + code
+                + "\nUA sent: " + (ua == null || ua.isEmpty() ? "(default)" : ua)
+                + "\nReferer sent: " + (curReferer == null || curReferer.isEmpty()
+                        ? "(none)" : curReferer)
+                + "\nCookies sent: " + cookieNames(cookie)
+                + "\nServer: " + conn.getHeaderField("Server")
+                + "\nContent-Type: " + conn.getHeaderField("Content-Type")
+                + "\nWWW-Authenticate: " + conn.getHeaderField("WWW-Authenticate");
+    }
+
+    private static String cookieNames(String cookie) {
+        if (cookie == null || cookie.isEmpty()) return "(none)";
+        StringBuilder sb = new StringBuilder();
+        for (String part : cookie.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq > 0) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(part.substring(0, eq).trim());
+            }
+        }
+        return sb.length() == 0 ? "(unparsed)" : sb.toString();
+    }
+
     static String friendlyHttp(int code) {
         switch (code) {
-            case 403: return "Server refused (403) - the link may have expired; share it again";
+            case 403: return "Server refused the download (403)";
             case 404: return "File not found (404)";
             case 410: return "Link expired (410) - share it again";
             case 416: return "Server range error (416)";

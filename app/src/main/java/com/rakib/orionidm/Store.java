@@ -88,6 +88,32 @@ public class Store {
         return id;
     }
 
+    /** Records an already-finished download (used by the in-page fetcher). */
+    public static synchronized long addCompleted(Context ctx, String url, String name,
+                                                 long size, String uri, boolean audioOnly) {
+        long id = System.currentTimeMillis();
+        JSONObject o = new JSONObject();
+        try {
+            o.put("id", id);
+            o.put("url", url);
+            o.put("name", name);
+            o.put("ua", "");
+            o.put("cookie", "");
+            o.put("total", size);
+            o.put("done", size);
+            o.put("speed", 0);
+            o.put("parts", 1);
+            o.put("status", "done");
+            o.put("audioOnly", audioOnly ? 1 : 0);
+            o.put("referer", "");
+            o.put("finalUri", uri == null ? "" : uri);
+            o.put("error", "");
+            o.put("debug", "");
+        } catch (JSONException ignored) {}
+        put(ctx, o);
+        return id;
+    }
+
     private static void save(Context ctx, List<JSONObject> list) {
         JSONArray arr = new JSONArray();
         for (JSONObject o : list) arr.put(o);

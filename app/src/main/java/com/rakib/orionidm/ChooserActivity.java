@@ -304,7 +304,13 @@ public class ChooserActivity extends Activity {
         adapter.notifyDataSetChanged();
     }
 
+    private WebFetcher fetcher;
+
     private void pick(Choice c) {
+        String cur = web.getUrl();
+        boolean facebook = (pageUrl != null && pageUrl.contains("facebook.com"))
+                || (cur != null && cur.contains("facebook.com"));
+        if (facebook) { pickViaWeb(c); return; }
         String ua = web.getSettings().getUserAgentString();
         // The stream lives on a CDN domain - its cookies are the ones that
         // matter; fall back to the page's cookies.
@@ -340,6 +346,52 @@ public class ChooserActivity extends Activity {
         }
         startActivity(i);
         finish();
+    }
+
+    /** Facebook's CDN refuses the plain download engine (HTTP 403) even
+     *  with cookies/UA/Referer, while the same file plays in this WebView.
+     *  So fetch it from inside the page's own session instead. */
+    private void pickViaWeb(Choice c) {
+        boolean audioOnly = "audioFromVideo".equals(c.kind);
+        String base = pageTitle;
+        if (base == null || base.trim().isEmpty()) base = MainActivity.guessFileName(c.url);
+        base = base.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        if (base.isEmpty()) base = "media";
+        String name;
+        if (audioOnly) {
+            name = stripExt(base) + ".m4a";
+        } else {
+            String fn = MainActivity.guessFileName(c.url);
+            name = fn.isEmpty() ? base + ("audio".equals(c.kind) ? ".mp3" : ".mp4") : fn;
+        }
+        listView.setEnabled(false);
+        progress.setVisibility(View.VISIBLE);
+        status.setText("Fetching inside the page — this bypasses the 403 block…");
+        if (fetcher == null) {
+            fetcher = new WebFetcher(this, web, new WebFetcher.Listener() {
+                @Override public void onProgress(long done, long total) {
+                    runOnUiThread(() -> status.setText(
+                            "Fetching inside the page… " + DownloadService.human(done)));
+                }
+                @Override public void onDone(String savedName) {
+                    Toast.makeText(ChooserActivity.this,
+                            "Saved to Downloads: " + savedName, Toast.LENGTH_LONG).show();
+                    Intent i = new Intent(ChooserActivity.this, MainActivity.class);
+                    i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(i);
+                    finish();
+                }
+                @Override public void onError(String message) {
+                    progress.setVisibility(View.GONE);
+                    listView.setEnabled(true);
+                    status.setText("In-page fetch failed: " + message
+                            + "\nTap a format to try again, or open the built-in "
+                            + "browser below, log in to Facebook there, and retry.");
+                }
+            });
+        }
+        fetcher.start(c.url, name, audioOnly);
     }
 
     static String stripExt(String name) {

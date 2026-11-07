@@ -1,6 +1,6 @@
 # Orion-IDM
 
-**Orion IDM** — an IDM-style download manager for Android. Version 2.5.
+**Orion IDM** — an IDM-style download manager for Android. Version 2.6.
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
@@ -58,6 +58,15 @@ progress, using Android's system DownloadManager.
   trimming on pasted links, chooser Rescan button, CDN-domain cookies,
   browser Grab also scanning players/page meta, blob-stream explanation,
   and a watchdog so audio extraction can never spin forever.
+- **In-page fetch for Facebook (v2.6):** a fresh-share test on v2.5 still
+  got HTTP 403, proving the refusal is not link expiry and not the Referer —
+  Facebook's CDN refuses the plain HTTP client while the same file plays
+  inside the WebView. Chooser and built-in-browser picks on Facebook pages
+  now fetch the file from inside the page's own WebView session
+  (`WebFetcher`: fetch() + streamed JS bridge -> Downloads, optional audio
+  extraction), recorded in the same download list. The engine also captures
+  debug info on failure now (tap a failed entry -> Copy debug), ending
+  guesswork about what the server answered.
 - Paste a link, or Share a link from Chrome / Telegram / WhatsApp to the app
 - Auto file-name detection from the link (editable before downloading)
 - Queue: add many links, they download one after another
@@ -75,7 +84,7 @@ it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
 
-Package: `com.rakib.orionidm` · Version: 2.5
+Package: `com.rakib.orionidm` · Version: 2.6
 
 ## Build
 
