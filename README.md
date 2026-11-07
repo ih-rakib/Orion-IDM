@@ -1,6 +1,6 @@
 # Orion-IDM
 
-**Orion IDM** — an IDM-style download manager for Android. Version 2.0.
+**Orion IDM** — an IDM-style download manager for Android. Version 2.1.
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
@@ -16,6 +16,17 @@ progress, using Android's system DownloadManager.
   "Grab download links" button to pick a file from the page; the download
   carries the site's cookies and user-agent, so logged-in downloads work
 - **Proper app icon (v2):** adaptive launcher icon (download arrow + orbit dot)
+- **Format chooser (v2.1):** sharing a page link (e.g. from the Facebook app)
+  opens a chooser before anything downloads. It scans the loaded page for
+  playable streams (og:video, <video> elements, Facebook's embedded
+  playable_url / hd / sd stream data), probes each stream's real resolution
+  from its metadata, and lists them best-first — e.g. "Video 720p", "Video SD"
+  — plus **Audio only**: the smallest video stream is downloaded and its audio
+  track is extracted to `.m4a` on-device (`AudioExtractor`, MediaCodec /
+  MediaMuxer remux or transcode; stock Android has no MP3 encoder, and M4A/AAC
+  plays everywhere). Direct video file links also get a Video / Audio choice.
+  If a page hides its streams (login wall), the chooser offers the built-in
+  browser instead.
 - Paste a link, or Share a link from Chrome / Telegram / WhatsApp to the app
 - Auto file-name detection from the link (editable before downloading)
 - Queue: add many links, they download one after another
@@ -33,7 +44,7 @@ it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
 
-Package: `com.rakib.orionidm` · Version: 2.0
+Package: `com.rakib.orionidm` · Version: 2.1
 
 ## Build
 

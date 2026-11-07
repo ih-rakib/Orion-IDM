@@ -64,7 +64,7 @@ public class Store {
     }
 
     public static synchronized long newEntry(Context ctx, String url, String name,
-                                             String ua, String cookie) {
+                                             String ua, String cookie, boolean audioOnly) {
         long id = System.currentTimeMillis();
         JSONObject o = new JSONObject();
         try {
@@ -78,6 +78,7 @@ public class Store {
             o.put("speed", 0);
             o.put("parts", 1);
             o.put("status", "queued");
+            o.put("audioOnly", audioOnly ? 1 : 0);
             o.put("finalUri", "");
             o.put("error", "");
         } catch (JSONException ignored) {}

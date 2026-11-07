@@ -231,8 +231,22 @@ public class DownloadService extends Service {
             return;
         }
 
-        // ---- Publish into the public Downloads folder ----------------
+        // ---- Optional: audio-only (extract the audio track) ----------
         File assembled = parts > 1 ? mergeParts(dir, parts, full) : new File(dir, "file.part");
+        if (entry.optInt("audioOnly", 0) == 1) {
+            File audioOut = new File(dir, "audio.m4a");
+            setStatus(id, "running", null);
+            notifyFinal(entry, "Extracting audio…");
+            if (!AudioExtractor.extract(assembled, audioOut)) {
+                setField(id, "speed", 0);
+                setStatus(id, "failed", "Audio extraction failed (no usable audio track)");
+                notifyFinal(entry, "Audio extraction failed");
+                return;
+            }
+            assembled = audioOut;
+        }
+
+        // ---- Publish into the public Downloads folder ----------------
         String uri = publish(assembled, name);
         setField(id, "finalUri", uri);
         JSONObject done = Store.get(this, id);

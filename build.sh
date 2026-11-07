@@ -6,6 +6,13 @@
 # build-tools 34.0.0. Set ANDROID_HOME if the SDK is not in ~/android-sdk.
 set -euo pipefail
 
+# Prefer a JDK unpacked in the home folder (survives machine rebuilds);
+# fall back to a system-installed JDK.
+if [ -x "$HOME/jdk17/bin/javac" ]; then
+    export PATH="$HOME/jdk17/bin:$PATH"
+    export JAVA_HOME="$HOME/jdk17"
+fi
+
 ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
 BT="$ANDROID_HOME/build-tools/34.0.0"
 PLATFORM="$ANDROID_HOME/platforms/android-34/android.jar"

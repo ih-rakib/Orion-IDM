@@ -95,7 +95,27 @@ public class MainActivity extends Activity {
         downloadBtn.setOnClickListener(v -> {
             String url = urlInput.getText().toString().trim();
             String name = nameInput.getText().toString().trim();
-            if (enqueue(url, name, "", "")) {
+            String found = findUrl(url);
+            if (found == null) { toast("Paste a link first"); return; }
+            if (isVideoFile(found)) {
+                // Choose the format before downloading
+                new AlertDialog.Builder(this)
+                        .setTitle("Choose format")
+                        .setItems(new String[]{
+                                "🎬 Video (original file)",
+                                "🎵 Audio only (.m4a, extracted from the video)"},
+                                (d, which) -> {
+                                    if (enqueue(found, name, "", "", which == 1)) {
+                                        urlInput.setText("");
+                                        nameInput.setText("");
+                                    }
+                                })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            } else if (!isDirectFile(found)) {
+                // A page link (Facebook post, Instagram, ...) - find its formats
+                openChooser(found);
+            } else if (enqueue(found, name, "", "", false)) {
                 urlInput.setText("");
                 nameInput.setText("");
             }
@@ -209,7 +229,8 @@ public class MainActivity extends Activity {
             String url = intent.getStringExtra("url");
             if (url != null && !url.isEmpty()) {
                 enqueue(url, intent.getStringExtra("name"),
-                        intent.getStringExtra("ua"), intent.getStringExtra("cookie"));
+                        intent.getStringExtra("ua"), intent.getStringExtra("cookie"),
+                        intent.getBooleanExtra("audioOnly", false));
                 refreshList();
             }
             return;
@@ -225,6 +246,11 @@ public class MainActivity extends Activity {
             if (data != null) shared = data.toString();
         }
         if (shared != null && !shared.isEmpty()) {
+            if (!isDirectFile(shared)) {
+                // Page link (e.g. a Facebook share) - let the user pick a format
+                openChooser(shared);
+                return;
+            }
             urlInput.setText(shared);
             String guess = guessFileName(shared);
             if (!guess.isEmpty()) nameInput.setText(guess);
@@ -232,18 +258,50 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean enqueue(String url, String name, String ua, String cookie) {
+    private boolean enqueue(String url, String name, String ua, String cookie,
+                            boolean audioOnly) {
         if (url == null || url.trim().isEmpty()) { toast("Paste a link first"); return false; }
         url = findUrl(url.trim());
         if (url == null) { toast("No http(s) link found"); return false; }
         if (name == null || name.trim().isEmpty()) name = guessFileName(url);
         if (name == null || name.isEmpty()) name = "download.bin";
         name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-        Store.newEntry(this, url, name, ua, cookie);
+        if (audioOnly) name = ChooserActivity.stripExt(name) + ".m4a";
+        Store.newEntry(this, url, name, ua, cookie, audioOnly);
         DownloadService.wake(this);
         toast("Download queued: " + name);
         refreshList();
         return true;
+    }
+
+    private void openChooser(String url) {
+        Intent i = new Intent(this, ChooserActivity.class);
+        i.putExtra("url", url);
+        startActivity(i);
+    }
+
+    static boolean isDirectFile(String url) {
+        return extOf(url) != null;
+    }
+
+    static boolean isVideoFile(String url) {
+        String e = extOf(url);
+        return e != null && (e.equals("mp4") || e.equals("mkv") || e.equals("webm")
+                || e.equals("mov") || e.equals("avi") || e.equals("3gp"));
+    }
+
+    private static String extOf(String url) {
+        if (url == null) return null;
+        String clean = url.split("[?#]")[0].toLowerCase();
+        int slash = clean.lastIndexOf('/');
+        int dot = clean.lastIndexOf('.');
+        if (dot < 0 || dot < slash || clean.length() - dot > 6) return null;
+        String e = clean.substring(dot + 1);
+        String[] known = {"zip","rar","7z","tar","gz","pdf","apk","mp4","mkv","webm","mov",
+                "avi","3gp","mp3","m4a","wav","flac","ogg","doc","docx","xls","xlsx","ppt",
+                "pptx","jpg","jpeg","png","gif","webp","txt","csv","iso","bin","dmg","exe","msi"};
+        for (String k : known) if (k.equals(e)) return e;
+        return null;
     }
 
     private void openDownload(JSONObject o) {
