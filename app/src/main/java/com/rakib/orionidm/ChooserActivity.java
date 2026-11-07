@@ -111,6 +111,23 @@ public class ChooserActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
         web.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                if (url == null) return false;
+                if (url.startsWith("fb://")) {
+                    // Facebook pages try to bounce the browser into the FB app
+                    // with an fb:// link. Convert it back to the web address
+                    // for the same video instead of dying on an error page.
+                    String web1 = MainActivity.normalizeSharedUrl(url);
+                    if (web1.startsWith("http") && !web1.equals(v.getUrl())) {
+                        v.loadUrl(web1);
+                    }
+                    return true;
+                }
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    return true; // tel:, intent:, fb-messenger: etc. - ignore
+                }
+                return false;
+            }
             @Override public void onPageFinished(WebView v, String url) {
                 pageTitle = v.getTitle() == null ? "" : v.getTitle();
                 // Give late JS a moment to inject the player data, then scan.
@@ -266,6 +283,7 @@ public class ChooserActivity extends Activity {
         }
         if (choices.isEmpty()) {
             status.setText("No video/audio found on this page.\n"
+                    + "Scanned: " + candidates.get(candIdx) + "\n"
                     + "The site may need you to log in first, or it protects its streams. "
                     + "Open it in the built-in browser below, log in / press play there, "
                     + "then use Grab links.");

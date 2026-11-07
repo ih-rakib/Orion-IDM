@@ -79,6 +79,14 @@ public class BrowserActivity extends Activity {
                 addressBar.setText(url);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                if (url != null && url.startsWith("fb://")) {
+                    String web1 = MainActivity.normalizeSharedUrl(url);
+                    if (web1.startsWith("http") && !web1.equals(v.getUrl())) v.loadUrl(web1);
+                    return true;
+                }
+                if (url != null && !url.startsWith("http://") && !url.startsWith("https://")) {
+                    return true;
+                }
                 if (isFileUrl(url)) {
                     handBack(url, URLUtil.guessFileName(url, null, null));
                     return true;

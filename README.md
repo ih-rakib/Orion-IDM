@@ -1,6 +1,6 @@
 # Orion-IDM
 
-**Orion IDM** — an IDM-style download manager for Android. Version 2.2.
+**Orion IDM** — an IDM-style download manager for Android. Version 2.3.
 
 Paste or share a **direct file link**, and it downloads in the background with
 progress, using Android's system DownloadManager.
@@ -33,6 +33,13 @@ progress, using Android's system DownloadManager.
   `facebook.com/watch/?v=<id>` page, and the chooser automatically tries the
   reel and mobile-watch addresses too if the first page hides its streams.
   The page scan also catches any direct `.mp4` URL embedded in the page.
+- **Redirect guard (v2.3):** a real-phone retest showed Facebook's *web* page
+  itself bounces the in-app browser to an `fb://` app link (which then dies
+  with "Webpage not available"). The chooser and built-in browser now
+  intercept any `fb://` navigation, convert it back to the watch page for
+  the same video, and ignore other non-web schemes. The main screen shows
+  the app version, and the chooser's empty-result message names the exact
+  address it scanned, so test screenshots are self-diagnosing.
 - Paste a link, or Share a link from Chrome / Telegram / WhatsApp to the app
 - Auto file-name detection from the link (editable before downloading)
 - Queue: add many links, they download one after another
@@ -50,7 +57,7 @@ it yourself, below), open it on your phone, and allow installing from that
 source when Android asks. Tested target: Android 15 (OnePlus Nord CE5);
 minimum: Android 8 (API 26).
 
-Package: `com.rakib.orionidm` · Version: 2.2
+Package: `com.rakib.orionidm` · Version: 2.3
 
 ## Build
 
