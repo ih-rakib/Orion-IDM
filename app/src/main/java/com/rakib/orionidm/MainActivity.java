@@ -243,7 +243,7 @@ public class MainActivity extends Activity {
             if (t != null) shared = findUrl(t.toString());
         } else if (Intent.ACTION_VIEW.equals(intent.getAction())) {
             Uri data = intent.getData();
-            if (data != null) shared = data.toString();
+            if (data != null) shared = normalizeSharedUrl(data.toString());
         }
         if (shared != null && !shared.isEmpty()) {
             if (!isDirectFile(shared)) {
@@ -263,6 +263,8 @@ public class MainActivity extends Activity {
         if (url == null || url.trim().isEmpty()) { toast("Paste a link first"); return false; }
         url = findUrl(url.trim());
         if (url == null) { toast("No http(s) link found"); return false; }
+        url = normalizeSharedUrl(url);
+        if (!url.startsWith("http")) { toast("That link type is not supported"); return false; }
         if (name == null || name.trim().isEmpty()) name = guessFileName(url);
         if (name == null || name.isEmpty()) name = "download.bin";
         name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
@@ -276,7 +278,7 @@ public class MainActivity extends Activity {
 
     private void openChooser(String url) {
         Intent i = new Intent(this, ChooserActivity.class);
-        i.putExtra("url", url);
+        i.putExtra("url", normalizeSharedUrl(url));
         startActivity(i);
     }
 
@@ -390,13 +392,43 @@ public class MainActivity extends Activity {
 
     static String findUrl(String text) {
         if (text == null) return null;
-        if (text.startsWith("http://") || text.startsWith("https://")) {
+        text = text.trim();
+        if (text.startsWith("http://") || text.startsWith("https://")
+                || text.startsWith("fb://")) {
             int sp = text.indexOf(' ');
             return sp > 0 ? text.substring(0, sp) : text;
         }
         for (String word : text.split("\\s+")) {
-            if (word.startsWith("http://") || word.startsWith("https://")) return word;
+            if (word.startsWith("http://") || word.startsWith("https://")
+                    || word.startsWith("fb://")) return word;
         }
+        return null;
+    }
+
+    /**
+     * Facebook's app often shares its internal deep link instead of a web
+     * link, e.g. fb://fullscreen_video/1927124748252382?loop=false&wtsid=...
+     * The long number is the video ID - turn it into the public watch URL.
+     */
+    static String normalizeSharedUrl(String url) {
+        if (url == null) return null;
+        url = url.trim();
+        if (url.startsWith("fb://")) {
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile("(\\d{6,})").matcher(url);
+            if (m.find()) return "https://www.facebook.com/watch/?v=" + m.group(1);
+            return url;
+        }
+        return url;
+    }
+
+    /** The video/post ID inside a Facebook URL, or null. */
+    static String facebookId(String url) {
+        if (url == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("[?&]v=(\\d{6,})|/(?:reel|videos|watch)/(\\d{6,})")
+                .matcher(url);
+        if (m.find()) return m.group(1) != null ? m.group(1) : m.group(2);
         return null;
     }
 

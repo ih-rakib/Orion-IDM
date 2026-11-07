@@ -55,6 +55,8 @@ public class ChooserActivity extends Activity {
     private String pageUrl;
     private String pageTitle = "";
     private boolean scanned = false;
+    private final List<String> candidates = new ArrayList<>();
+    private int candIdx = 0;
 
     private static class Choice {
         String kind;   // video | audio | audioFromVideo
@@ -68,8 +70,16 @@ public class ChooserActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chooser);
 
-        pageUrl = getIntent().getStringExtra("url");
+        pageUrl = MainActivity.normalizeSharedUrl(getIntent().getStringExtra("url"));
         if (pageUrl == null || pageUrl.isEmpty()) { finish(); return; }
+        candidates.add(pageUrl);
+        String fbId = MainActivity.facebookId(pageUrl);
+        if (fbId != null) {
+            String reel = "https://www.facebook.com/reel/" + fbId;
+            String mob = "https://m.facebook.com/watch/?v=" + fbId;
+            if (!candidates.contains(reel)) candidates.add(reel);
+            if (!candidates.contains(mob)) candidates.add(mob);
+        }
 
         web = findViewById(R.id.web);
         status = findViewById(R.id.status);
@@ -91,6 +101,9 @@ public class ChooserActivity extends Activity {
         });
 
         WebSettings s = web.getSettings();
+        s.setUserAgentString("Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+                + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                + "Chrome/120.0.0.0 Mobile Safari/537.36");
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setLoadWithOverviewMode(true);
@@ -161,6 +174,8 @@ public class ChooserActivity extends Activity {
                 + "var keys=[['playable_url_quality_hd','Video HD'],['browser_native_hd_url','Video HD'],['hd_src','Video HD'],['playable_url','Video'],['browser_native_sd_url','Video SD'],['sd_src','Video SD'],['audio_url','Audio']];"
                 + "for(var m=0;m<keys.length;m++){var key=keys[m][0];var re=new RegExp(key+'\\\\\\\\?\":\\\\\\\\?\"(https:[^\"]+)','g');var mm;"
                 + "while((mm=re.exec(html))!==null){var u=un(mm[1]);add(keys[m][1],u,key==='audio_url'?'audio':'video');}}"
+                + "var mp4re=/(https:[^\"\\'\\s]+\\.mp4[^\"\\'\\s]*)/g;"
+                + "while((mm=mp4re.exec(html))!==null){add('Video',un(mm[1]),'video');}"
                 + "return JSON.stringify(out);})()";
     }
 
@@ -240,6 +255,15 @@ public class ChooserActivity extends Activity {
             choices.add(new Choice("audioFromVideo", audioSource));
         }
 
+        if (choices.isEmpty() && candIdx + 1 < candidates.size()) {
+            candIdx++;
+            scanned = false;
+            progress.setVisibility(View.VISIBLE);
+            status.setText("Trying another address for this video… ("
+                    + (candIdx + 1) + "/" + candidates.size() + ")");
+            web.loadUrl(candidates.get(candIdx));
+            return;
+        }
         if (choices.isEmpty()) {
             status.setText("No video/audio found on this page.\n"
                     + "The site may need you to log in first, or it protects its streams. "
