@@ -59,6 +59,7 @@ public class DownloadService extends Service {
 
     private Thread worker;
     private long activeId = -1;
+    private String curReferer = "";
 
     // ---------------------------------------------------------------
 
@@ -152,6 +153,15 @@ public class DownloadService extends Service {
         String name = entry.optString("name");
         String ua = entry.optString("ua");
         String cookie = entry.optString("cookie");
+        curReferer = entry.optString("referer", "");
+        if (curReferer.isEmpty()
+                && (url.contains("fbcdn") || url.contains("scontent")
+                    || url.contains("facebook.com"))) {
+            // Facebook's CDN refuses media requests without a Facebook
+            // Referer (browsers send it automatically; a raw downloader
+            // must add it or it gets HTTP 403).
+            curReferer = "https://www.facebook.com/";
+        }
         File dir = new File(getFilesDir(), "parts/" + id);
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
@@ -438,6 +448,10 @@ public class DownloadService extends Service {
         conn.setRequestProperty("User-Agent",
                 ua == null || ua.isEmpty() ? "OrionIDM/2.0 (Android)" : ua);
         if (cookie != null && !cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
+        if (curReferer != null && !curReferer.isEmpty()) {
+            conn.setRequestProperty("Referer", curReferer);
+        }
+        conn.setRequestProperty("Accept", "*/*");
         if (range != null) conn.setRequestProperty("Range", range);
         return conn;
     }

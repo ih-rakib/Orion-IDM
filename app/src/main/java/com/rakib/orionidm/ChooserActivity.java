@@ -308,6 +308,8 @@ public class ChooserActivity extends Activity {
         i.putExtra("ua", ua == null ? "" : ua);
         i.putExtra("cookie", cookie);
         i.putExtra("autostart", true);
+        String ref = web.getUrl();
+        i.putExtra("referer", ref == null || ref.isEmpty() ? pageUrl : ref);
         if ("audioFromVideo".equals(c.kind)) {
             i.putExtra("audioOnly", true);
             i.putExtra("name", stripExt(base) + ".m4a");

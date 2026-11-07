@@ -173,6 +173,7 @@ public class BrowserActivity extends Activity {
         i.putExtra("ua", ua == null ? "" : ua);
         i.putExtra("cookie", cookie == null ? "" : cookie);
         i.putExtra("autostart", true);
+        i.putExtra("referer", web.getUrl() == null ? url : web.getUrl());
         startActivity(i);
         finish();
         toast("Download starting: " + filename);

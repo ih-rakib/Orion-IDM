@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
                                 "🎬 Video (original file)",
                                 "🎵 Audio only (.m4a, extracted from the video)"},
                                 (d, which) -> {
-                                    if (enqueue(found, name, "", "", which == 1)) {
+                                    if (enqueue(found, name, "", "", which == 1, "")) {
                                         urlInput.setText("");
                                         nameInput.setText("");
                                     }
@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
             } else if (!isDirectFile(found)) {
                 // A page link (Facebook post, Instagram, ...) - find its formats
                 openChooser(found);
-            } else if (enqueue(found, name, "", "", false)) {
+            } else if (enqueue(found, name, "", "", false, "")) {
                 urlInput.setText("");
                 nameInput.setText("");
             }
@@ -230,7 +230,8 @@ public class MainActivity extends Activity {
             if (url != null && !url.isEmpty()) {
                 enqueue(url, intent.getStringExtra("name"),
                         intent.getStringExtra("ua"), intent.getStringExtra("cookie"),
-                        intent.getBooleanExtra("audioOnly", false));
+                        intent.getBooleanExtra("audioOnly", false),
+                        intent.getStringExtra("referer"));
                 refreshList();
             }
             return;
@@ -259,7 +260,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean enqueue(String url, String name, String ua, String cookie,
-                            boolean audioOnly) {
+                            boolean audioOnly, String referer) {
         if (url == null || url.trim().isEmpty()) { toast("Paste a link first"); return false; }
         url = findUrl(url.trim());
         if (url == null) { toast("No http(s) link found"); return false; }
@@ -269,7 +270,7 @@ public class MainActivity extends Activity {
         if (name == null || name.isEmpty()) name = "download.bin";
         name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
         if (audioOnly) name = ChooserActivity.stripExt(name) + ".m4a";
-        Store.newEntry(this, url, name, ua, cookie, audioOnly);
+        Store.newEntry(this, url, name, ua, cookie, audioOnly, referer);
         DownloadService.wake(this);
         toast("Download queued: " + name);
         refreshList();
